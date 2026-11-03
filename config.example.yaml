@@ -1,0 +1,49 @@
+# EFB Telegraph Archive Middleware (flechazo.telegraph)
+# Copy to <profile>/flechazo.telegraph/config.yaml
+# Any string value may reference environment variables: ${NAME} or ${NAME:-default}
+
+# Telegraph access token. Leave empty to create an account automatically; the
+# token is then kept in <profile>/flechazo.telegraph/telegraph_token.
+telegraph_token: "${TELEGRAPH_TOKEN}"
+author_name: ""                 # fallback author when the source has none
+
+# Proxies (optional), e.g. http://proxy:7890
+proxy: ""                       # fetching source pages and images
+fallback_proxy: ""              # retry through it when direct access fails (SSL reset, 403 ...)
+telegraph_proxy: ""             # api.telegra.ph
+
+process_links: true             # WeChat share cards: preview becomes Instant View
+process_text_urls: true         # URLs in text messages: Telegraph link appended
+max_text_urls: 3
+text_prefix: "📰 "
+
+# Extra domains or "domain/path-prefix" to ignore (video sites, shops, mini
+# programs ... are skipped by default; set use_default_skip_domains: false to
+# disable that list).
+skip_domains: []
+use_default_skip_domains: true
+only_domains: []                # non-empty: archive only these
+
+min_text_length: 80             # skip generic pages with less readable text
+timeout: 25                     # seconds per link until the page is published
+image_timeout: 300              # background re-hosting budget; the page is edited in place
+cache_days: 30                  # reuse the existing page for the same URL
+footer: true                    # source / original link / archive time at the end
+
+# Images: Telegraph loads them directly from the source, and many CDNs
+# (WeChat, Weibo, Xiaohongshu, Bilibili ...) block the telegra.ph Referer.
+# Such images are downloaded, compressed and committed to a public GitHub repo.
+image_host:
+  type: github                  # github | proxy | none
+  rehost: protected             # protected (hotlink-blocked only) | all | none
+  repo: "${TELEGRAPH_IMAGE_REPO}"   # owner/name, created automatically (public)
+  token: "${GITHUB_TOKEN}"      # needs contents:write on that repo
+  branch: main
+  path_prefix: ""
+  url_template: "https://raw.githubusercontent.com/{repo}/{branch}/{path}"
+  # type: proxy  ->  proxy_template: "https://wsrv.nl/?url={url}"
+  proxy_template: ""
+  api_proxy: ""
+  max_side: 1600
+  jpeg_quality: 85
+  extra_protected_domains: []

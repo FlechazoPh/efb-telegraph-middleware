@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "efb-telegraph-middleware"
+version = "1.0.0"
+description = "EH Forwarder Bot middleware: archive every shared link to Telegraph (Instant View), re-hosting hotlink-protected images"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "FlechazoPh" }]
+keywords = ["ehforwarderbot", "efb", "middleware", "telegraph", "instant view", "wechat"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "ehforwarderbot>=2.0.0",
+    "requests",
+    "beautifulsoup4",
+    "lxml",
+    "readability-lxml",
+    "lxml_html_clean",
+    "PyYAML",
+    "Pillow",
+]
+
+[project.urls]
+Homepage = "https://github.com/FlechazoPh/efb-telegraph-middleware"
+
+[project.entry-points."ehforwarderbot.middleware"]
+"flechazo.telegraph" = "efb_telegraph_middleware:TelegraphMiddleware"
+
+[tool.setuptools.packages.find]
+include = ["efb_telegraph_middleware*"]
