@@ -349,6 +349,66 @@ SITE_EXTRACTORS: List[tuple] = [
     (("weibo.com", "weibo.cn", "m.weibo.cn"), extract_weibo),
 ]
 
+# Hosts for which a self-hosted ParseHub service is tried first (it holds the
+# per-platform cookies needed to beat the login/anti-bot walls).
+PARSEHUB_HOSTS = ("xiaohongshu.com", "xhslink.com", "douyin.com", "iesdouyin.com",
+                  "weibo.com", "weibo.cn", "kuaishou.com", "ixigua.com", "zhihu.com",
+                  "douban.com", "toutiao.com", "xiaoheihe.cn", "coolapk.com", "pipix.com")
+
+_PARSEHUB_SITE_NAMES = {
+    "douyin": "抖音", "xhs": "小红书", "weibo": "微博", "kuaishou": "快手",
+    "zhihu": "知乎", "douban": "豆瓣", "toutiao": "今日头条", "bilibili": "哔哩哔哩",
+}
+
+
+def extract_parsehub(session: requests.Session, url: str, timeout: float, api: str) -> Optional[Article]:
+    """Build an Article from the ParseHub service for image/richtext posts.
+
+    Returns None for videos (handled by the video parser middleware) or when
+    the service cannot help, so the caller can fall back to a native extractor.
+    """
+    try:
+        r = session.get(f"{api.rstrip('/')}/parse", params={"url": url}, timeout=timeout)
+    except requests.RequestException as exc:
+        raise FetchError(f"parsehub unreachable: {exc}") from exc
+    if r.status_code == 422:
+        return None
+    if r.status_code >= 400:
+        raise Unavailable(f"parsehub {r.status_code}")
+    data = r.json() or {}
+    kind = data.get("type")
+    if kind not in ("image", "richtext", "multimedia"):
+        return None  # video / music -> not an article
+    media = data.get("media")
+    media = media if isinstance(media, list) else ([media] if media else [])
+    nodes: List[Node] = []
+    text = (data.get("content") or data.get("title") or "").strip()
+    for line in text.splitlines():
+        if line.strip():
+            nodes.append(paragraph(line.strip()))
+    images: List[Dict[str, Any]] = []
+    for item in media:
+        if not isinstance(item, dict):
+            continue
+        # live photos / videos inside an image post: keep the still image only
+        src = item.get("url")
+        if not src:
+            continue
+        ext = (item.get("ext") or "").lower()
+        if ext in ("mp4", "mov", "webm", "m4v") and item.get("thumb_url"):
+            src = item["thumb_url"]
+        fig = {"tag": "figure", "children": [{"tag": "img", "attrs": {"src": src}}]}
+        nodes.append(fig)
+        images.append(fig["children"][0])
+    if not images and not text:
+        raise Unavailable("parsehub returned empty post")
+    platform = data.get("platform") or host_of(url)
+    title = (data.get("title") or (text.splitlines()[0] if text else "") or
+             _PARSEHUB_SITE_NAMES.get(platform, platform))[:120]
+    return Article(url=data.get("raw_url") or url, title=title, nodes=nodes, images=images,
+                   site=_PARSEHUB_SITE_NAMES.get(platform, platform),
+                   referer=f"https://{host_of(url)}/")
+
 
 def pick_extractor(url: str) -> Extractor:
     host = host_of(url)
@@ -366,8 +426,21 @@ def _blocked(exc: Exception) -> bool:
 
 
 def extract(session: requests.Session, url: str, timeout: float = 12,
-            min_text: int = 80, fallback_session: Optional[requests.Session] = None) -> Optional[Article]:
+            min_text: int = 80, fallback_session: Optional[requests.Session] = None,
+            parsehub_api: str = "") -> Optional[Article]:
     """Extract an article, returning None when there is nothing to archive."""
+    host = host_of(url)
+    # Try the self-hosted ParseHub service first for the platforms it covers;
+    # it holds the cookies needed to beat login/anti-bot walls. A None result
+    # means "video or can't help" -> fall through to the native extractor.
+    if parsehub_api and any(host == h or host.endswith("." + h) for h in PARSEHUB_HOSTS):
+        try:
+            article = extract_parsehub(session, url, timeout, parsehub_api)
+            if article is not None:
+                return article
+        except (Unavailable, FetchError, requests.RequestException, ValueError) as exc:
+            logger.info("ParseHub extract failed for %s: %s; falling back", url, exc)
+
     extractor = pick_extractor(url)
 
     def run(sess: requests.Session) -> Article:

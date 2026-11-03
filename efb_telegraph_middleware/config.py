@@ -29,6 +29,8 @@ DEFAULTS: Dict[str, Any] = {
     "proxy": "",                    # proxy for fetching source pages and images
     "fallback_proxy": "",           # retry through this proxy when direct access is blocked
     "telegraph_proxy": "",          # proxy for api.telegra.ph
+    "parsehub_api": "",             # self-hosted ParseHub service, e.g. http://parsehub_service:8000
+                                    # (used first for xhs/douyin/weibo... image posts)
     "process_links": True,          # WeChat share cards (MsgType.Link)
     "process_text_urls": True,      # URLs inside text messages
     "max_text_urls": 3,

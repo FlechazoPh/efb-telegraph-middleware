@@ -106,7 +106,8 @@ class Archiver:
         budget = float(self.config.get("timeout", 25))
         article = extract(self.session, url, timeout=min(15.0, budget),
                           min_text=int(self.config.get("min_text_length", 80)),
-                          fallback_session=self.fallback_session)
+                          fallback_session=self.fallback_session,
+                          parsehub_api=self.config.get("parsehub_api") or "")
         if article is None:
             return None
         nodes = list(article.nodes)

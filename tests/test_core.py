@@ -139,6 +139,61 @@ def test_extract_weibo(monkeypatch):
     assert any(n.get("tag") == "blockquote" for n in art.nodes)
 
 
+def test_extract_parsehub_image_and_dispatch(monkeypatch):
+    class Resp:
+        def __init__(self, data, status=200):
+            self._d, self.status_code = data, status
+            self.headers = {}
+
+        def json(self):
+            return self._d
+
+        def close(self):
+            pass
+
+    # image post -> Article with images + caption
+    calls = []
+
+    def fake_get(u, **kw):
+        calls.append((u, kw.get("params")))
+        return Resp({"type": "image", "platform": "xhs", "title": "标题",
+                     "content": "第一行\n第二行", "raw_url": "https://www.xiaohongshu.com/x",
+                     "media": [{"url": "https://sns.xhscdn.com/1.jpg", "ext": "jpg"},
+                               {"url": "https://sns.xhscdn.com/v.mp4", "ext": "mp4",
+                                "thumb_url": "https://sns.xhscdn.com/v.jpg"}]})
+
+    session = types.SimpleNamespace(get=fake_get)
+    art = extractors.extract(session, "https://www.xiaohongshu.com/discovery/item/1",
+                             parsehub_api="http://ph:8000")
+    assert art.site == "小红书" and art.title == "标题"
+    assert [n["tag"] for n in art.nodes] == ["p", "p", "figure", "figure"]
+    # live-photo/video item falls back to its still thumbnail
+    assert art.images[1]["attrs"]["src"].endswith("v.jpg")
+    assert calls[0][0].endswith("/parse") and calls[0][1] == {"url": "https://www.xiaohongshu.com/discovery/item/1"}
+
+    # video post via parsehub -> None (left to video parser), then native extractor runs
+    def fake_get_video(u, **kw):
+        return Resp({"type": "video", "media": {"url": "x.mp4"}})
+
+    native_called = []
+
+    def fake_native(s, u, t):
+        native_called.append(u)
+        return extractors.Article(url=u, title="native", nodes=[nodes.paragraph("x")], site="小红书")
+
+    monkeypatch.setattr(extractors, "SITE_EXTRACTORS",
+                        [(("xiaohongshu.com", "xhslink.com"), fake_native)])
+    art = extractors.extract(types.SimpleNamespace(get=fake_get_video),
+                             "https://www.xiaohongshu.com/discovery/item/2", parsehub_api="http://ph:8000")
+    assert native_called == ["https://www.xiaohongshu.com/discovery/item/2"] and art.title == "native"
+
+    # parsehub 502 -> fall back to native extractor instead of failing
+    native_called.clear()
+    art = extractors.extract(types.SimpleNamespace(get=lambda u, **k: Resp({}, 502)),
+                             "https://www.xiaohongshu.com/discovery/item/3", parsehub_api="http://ph:8000")
+    assert native_called == ["https://www.xiaohongshu.com/discovery/item/3"]
+
+
 # ------------------------------------------------------------- telegraph ---
 def test_split_pages_respects_limit():
     big = [{"tag": "p", "children": ["字" * 3000]} for _ in range(40)]
