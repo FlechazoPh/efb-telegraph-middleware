@@ -43,6 +43,14 @@ class Unavailable(RuntimeError):
     """The page exists but has no archivable content (deleted, login wall...)."""
 
 
+class NotAnArticle(RuntimeError):
+    """The link is definitively a video/music post, not something to archive.
+
+    Raised so the caller stops (the video parser middleware owns such links)
+    instead of falling back to generic extraction, which would produce junk.
+    """
+
+
 def _meta(soup: BeautifulSoup, *names: str) -> str:
     for name in names:
         tag = soup.find("meta", attrs={"property": name}) or soup.find("meta", attrs={"name": name})
@@ -377,8 +385,10 @@ def extract_parsehub(session: requests.Session, url: str, timeout: float, api: s
         raise Unavailable(f"parsehub {r.status_code}")
     data = r.json() or {}
     kind = data.get("type")
+    if kind in ("video", "music"):
+        raise NotAnArticle(f"parsehub type={kind}")
     if kind not in ("image", "richtext", "multimedia"):
-        return None  # video / music -> not an article
+        return None
     media = data.get("media")
     media = media if isinstance(media, list) else ([media] if media else [])
     nodes: List[Node] = []

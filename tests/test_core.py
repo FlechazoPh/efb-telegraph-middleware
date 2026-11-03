@@ -171,7 +171,8 @@ def test_extract_parsehub_image_and_dispatch(monkeypatch):
     assert art.images[1]["attrs"]["src"].endswith("v.jpg")
     assert calls[0][0].endswith("/parse") and calls[0][1] == {"url": "https://www.xiaohongshu.com/discovery/item/1"}
 
-    # video post via parsehub -> None (left to video parser), then native extractor runs
+    # video post via parsehub -> NotAnArticle: left to the video parser, and the
+    # native extractor must NOT run (it would produce a junk page)
     def fake_get_video(u, **kw):
         return Resp({"type": "video", "media": {"url": "x.mp4"}})
 
@@ -183,9 +184,13 @@ def test_extract_parsehub_image_and_dispatch(monkeypatch):
 
     monkeypatch.setattr(extractors, "SITE_EXTRACTORS",
                         [(("xiaohongshu.com", "xhslink.com"), fake_native)])
-    art = extractors.extract(types.SimpleNamespace(get=fake_get_video),
-                             "https://www.xiaohongshu.com/discovery/item/2", parsehub_api="http://ph:8000")
-    assert native_called == ["https://www.xiaohongshu.com/discovery/item/2"] and art.title == "native"
+    try:
+        extractors.extract(types.SimpleNamespace(get=fake_get_video),
+                           "https://www.xiaohongshu.com/discovery/item/2", parsehub_api="http://ph:8000")
+        raise AssertionError("expected NotAnArticle for a video post")
+    except extractors.NotAnArticle:
+        pass
+    assert native_called == []
 
     # parsehub 502 -> fall back to native extractor instead of failing
     native_called.clear()

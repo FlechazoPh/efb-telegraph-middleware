@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .cache import Cache
-from .extractors import Article, extract
+from .config import DEFAULT_SKIP_DOMAINS
+from .extractors import Article, NotAnArticle, extract
 from .http import make_session
 from .images import GitHubStore, ImageProcessor
 from .nodes import Node, link
@@ -72,7 +73,17 @@ class Archiver:
         only = self.config.get("only_domains") or []
         if only and not url_matches(url, only):
             return False
-        return not url_matches(url, self.config.get("skip_domains") or [])
+        skip = self.config.get("skip_domains") or []
+        if url_matches(url, self.config.get("skip_domains") or []):
+            # The default skip list contains the platforms owned by the video
+            # parser middleware (douyin, kuaishou, bilibili video...). When a
+            # ParseHub service is configured those platforms can also be image
+            # / text posts worth archiving, so let them through: ParseHub
+            # decides (a video raises NotAnArticle and the link is dropped).
+            if self.config.get("parsehub_api") and url_matches(url, DEFAULT_SKIP_DOMAINS):
+                return True
+            return False
+        return True
 
     def archive(self, url: str) -> Optional[str]:
         """Return the Telegraph URL for ``url`` or None if it cannot be archived."""
@@ -96,6 +107,10 @@ class Archiver:
             if page_url:
                 self.cache.put_page(key, page_url, "")
             return page_url
+        except NotAnArticle:
+            # A pure video/music post: the video parser middleware owns it.
+            logger.debug("Skip %s: not an article (%s)", url, "video/music")
+            return None
         finally:
             with self._inflight_lock:
                 self._inflight.pop(key, None)

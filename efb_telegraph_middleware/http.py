@@ -42,6 +42,26 @@ def make_session(proxy: Optional[str] = None, user_agent: str = DESKTOP_UA,
     return session
 
 
+def _sniff_encoding(body: bytes) -> Optional[str]:
+    """Guess the charset of already-downloaded bytes (no extra HTTP reads)."""
+    if not body:
+        return None
+    try:
+        from charset_normalizer import from_bytes
+
+        best = from_bytes(body[:65536]).best()
+        if best and best.encoding:
+            return best.encoding
+    except Exception:
+        pass
+    head = body[:4096].lower()
+    if b"charset=utf-8" in head:
+        return "utf-8"
+    if b"charset=gb" in head:
+        return "gb18030"
+    return None
+
+
 def fetch_html(session: requests.Session, url: str, timeout: float = 12,
                headers: Optional[dict] = None) -> Page:
     response = session.get(url, timeout=(min(6.0, timeout), timeout), headers=headers or {},
@@ -63,7 +83,10 @@ def fetch_html(session: requests.Session, url: str, timeout: float = 12,
             if b"charset=gb" in head or b"charset=\"gb" in head:
                 encoding = "gb18030"
             else:
-                encoding = response.apparent_encoding or "utf-8"
+                # Do NOT use response.apparent_encoding here: it re-reads the
+                # response, which is already consumed (requests raises
+                # "The content for this response was already consumed").
+                encoding = _sniff_encoding(bytes(body)) or "utf-8"
         if encoding.lower() in ("gb2312", "gbk"):
             encoding = "gb18030"
         return Page(url=response.url, html=bytes(body).decode(encoding, errors="replace"),
